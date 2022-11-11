@@ -7,7 +7,8 @@ image:
   # of weaviate. In accordance with Infra-as-code, you should pin this value
   # down and only change it if you explicitly want to upgrade the Weaviate
   # version.
-  tag: 1.16.0
+  # TODO change to proper v1.14 version after weaviate release
+  tag: 1.16.1
   repo: semitechnologies/weaviate
 
 # overwrite command and args if you want to run specific startup scripts, for
@@ -22,15 +23,13 @@ args:
   - 'http'
   - '--config-file'
   - '/weaviate-config/conf.yaml'
-  - --read-timeout=60s 
-  - --write-timeout=60s
 
 # below is an example that can be used to set an arbitrary nofile limit at
 # startup:
 #
-# command: 
+# command:
 #   - "/bin/sh"
-# args: 
+# args:
 #   - "-c"
 #   - "ulimit -n 65535 && /bin/weaviate --host 0.0.0.0 --port 8080 --scheme http --config-file /weaviate-config/conf.yaml"
 
@@ -38,32 +37,27 @@ args:
 # to cases where no data is imported yet. Scaling down after importing data may
 # break usability. Full dynamic scalability will be added in a future release.
 replicas: 1
-resources: {}
-  # requests:
-  #   cpu: '500m'
-  #   memory: '300Mi'
-  # limits:
-  #   cpu: '1000m'
-  #   memory: '1Gi'
+resources:
+  requests:
+    cpu: '500m'
+    memory: '10Gi'
+  limits:
+    cpu: '2000m'
+    memory: '50Gi'  # TODO: test if we can run this
 
 # The Persistent Volume Claim settings for Weaviate. If there's a
 # storage.fullnameOverride field set, then the default pvc will not be
 # created, instead the one defined in fullnameOverride will be used
 storage:
-  size: 32Gi
-  storageClassName: premium-rwo
+  size: 500Gi
+  storageClassName: gp2
 
 # The service controls how weaviate is exposed to the outside world. If you
 # don't want a public load balancer, you can also choose 'ClusterIP' to make
 # weaviate only accessible within your cluster.
 service:
   name: weaviate
-  ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      # Target port is going to be the same for every port
-  type: LoadBalancer
+  type: ClusterIP
   loadBalancerSourceRanges: []
   # optionally set cluster IP if you want to set a static IP
   clusterIP:
@@ -72,7 +66,7 @@ service:
 # Adjust liveness, readiness and startup probes configuration
 startupProbe:
   # For kubernetes versions prior to 1.18 startupProbe is not supported thus can be disabled.
-  enabled: false
+  enabled: true
 
   initialDelaySeconds: 300
   periodSeconds: 60
@@ -95,7 +89,7 @@ readinessProbe:
   timeoutSeconds: 3
 
 
-terminationGracePeriodSeconds: 600
+terminationGracePeriodSeconds: 300
 
 # Weaviate Config
 #
@@ -110,7 +104,7 @@ authorization:
   admin_list:
     enabled: false
 query_defaults:
-  limit: 100
+  limit: 25 # TODO: 100 is default
 debug: false
 
 
@@ -124,21 +118,6 @@ env:
   # Expose metrics on port 2112 for Prometheus to scrape
   PROMETHEUS_MONITORING_ENABLED: false
 
-  # Set a MEM limit for the Weaviate Pod so it can help you both increase GC-related 
-  # performance as well as avoid GC-related out-of-memory (“OOM”) situations
-  # GOMEMLIMT: 6GiB
-
-  # Maximum results Weaviate can query with/without pagination
-  # NOTE: Affects performance, do NOT set to a very high value.
-  # The default is 100K
-  QUERY_MAXIMUM_RESULTS: 100000
-
-  # whether to enable vector dimensions tracking metric
-  TRACK_VECTOR_DIMENSIONS: false
-
-  # whether to re-index/-compute the vector dimensions metric (needed if upgrading from weaviate < v1.16.0)
-  REINDEX_VECTOR_DIMENSIONS_AT_STARTUP: false
-
 envSecrets:
 
 
@@ -151,34 +130,34 @@ backups:
     envconfig:
       # Configure folder where backups should be saved
       BACKUP_FILESYSTEM_PATH: /tmp/backups
-  
+
   s3:
-    enabled: false
+    enabled: true
     # If one is using AWS EKS and has already configured K8s Service Account
     # that holds the AWS credentials one can pass a name of that service account
     # here using this setting:
     # serviceAccountName: service-account-name
     envconfig:
       # Configure bucket where backups should be saved, this setting is mandatory
-      BACKUP_S3_BUCKET: weaviate-backups
+      BACKUP_S3_BUCKET: dev-zenpulsar-weaviate-backups
 
-      # Optional setting. Defaults to empty string. 
+      # Optional setting. Defaults to empty string.
       # Set this option if you want to save backups to a given location
       # inside the bucket
       # BACKUP_S3_PATH: path/inside/bucket
 
-      # Optional setting. Defaults to AWS S3 (s3.amazonaws.com). 
+      # Optional setting. Defaults to AWS S3 (s3.amazonaws.com).
       # Set this option if you have a MinIO storage configured in your environment
       # and want to use it instead of the AWS S3.
-      # BACKUP_S3_ENDPOINT: custom.minio.endpoint.address
+      BACKUP_S3_ENDPOINT: dev-zenpulsar-pump-airflow-s3
 
-      # Optional setting. Defaults to true. 
+      # Optional setting. Defaults to true.
       # Set this option if you don't want to use SSL.
       # BACKUP_S3_USE_SSL: true
 
       # You can pass environment AWS settings here:
       # Define the region
-      # AWS_REGION: eu-west-1
+      AWS_REGION: us-east-1
 
     # If one uses access and secret key to authorize in AWS one can set them using secrets
     secrets: {}
@@ -227,7 +206,7 @@ modules:
   # transformers-based models.
   text2vec-contextionary:
     # disable if you want to use transformers or import or own vectors
-    enabled: false
+    enabled: true
 
     # The configuration below is ignored if enabled==false
     fullnameOverride: contextionary
@@ -253,14 +232,11 @@ modules:
     # tolerations, and affinity configuration. If it is set on a per-
     # module basis, this configuration overrides the global config.
 
-    nodeSelector: {}
+    # nodeSelector: {}
 
-    tolerations:
-      - key: "my-example-key"
-        operator: "Exists"
-        effect: "NoSchedule"
+    # tolerations: []
 
-    affinity: {}
+    # affinity: {}
 
   # The text2vec-transformers modules uses neural networks, such as BERT,
   # DistilBERT, etc. to dynamically compute vector embeddings based on the
@@ -270,7 +246,7 @@ modules:
 
     # enable if you want to use transformers instead of the
     # text2vec-contextionary module
-    enabled: false
+    enabled: true
     # You can set directly an inference URL of this module without deploying it with this release.
     # You can do so by setting a value for the `inferenceUrl` here AND by setting the `enable` to `false`
     inferenceUrl: {}
@@ -279,7 +255,7 @@ modules:
     # replace with model of choice, see
     # https://www.semi.technology/developers/weaviate/current/modules/text2vec-transformers.html
     # for all supported models or build your own container.
-    tag: distilbert-base-uncased
+    tag: sentence-transformers-paraphrase-multilingual-MiniLM-L12-v2
     repo: semitechnologies/transformers-inference
     registry: docker.io
     replicas: 1
@@ -288,7 +264,7 @@ modules:
     envconfig:
       # enable for CUDA support. Your K8s cluster needs to be configured
       # accordingly and you need to explicitly set GPU requests & limits below
-      enable_cuda: false
+      enable_cuda: true
 
       # only used when cuda is enabled
       nvidia_visible_devices: all
@@ -299,16 +275,16 @@ modules:
     resources:
       requests:
         cpu: '1000m'
-        memory: '3000Mi'
-
+        memory: '5000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
       limits:
         cpu: '1000m'
-        memory: '5000Mi'
-
+        memory: '8000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
 
     passageQueryServices:
       passage:
@@ -337,15 +313,14 @@ modules:
           requests:
             cpu: '1000m'
             memory: '3000Mi'
-
             # enable if running with CUDA support
             # nvidia.com/gpu: 1
           limits:
             cpu: '1000m'
             memory: '5000Mi'
-
             # enable if running with CUDA support
             # nvidia.com/gpu: 1
+
       query:
         enabled: false
         # You can set directly an inference URL of this module without deploying it with this release.
@@ -372,13 +347,11 @@ modules:
           requests:
             cpu: '1000m'
             memory: '3000Mi'
-
             # enable if running with CUDA support
             # nvidia.com/gpu: 1
           limits:
             cpu: '1000m'
             memory: '5000Mi'
-
             # enable if running with CUDA support
             # nvidia.com/gpu: 1
 
@@ -409,25 +382,6 @@ modules:
     # Set your HuggingFace API Key to be passed to Weaviate pod as
     # an environment variable
     apiKey: ''
-
-  # The text2vec-cohere module uses Cohere API
-  # to dynamically compute vector embeddings based on the
-  # sentence's context.
-  # More information about Cohere API can be found here: https://docs.cohere.ai/
-  text2vec-cohere:
-
-    # enable if you want to use Cohere module
-    enabled: false
-
-    # Set your Cohere API Key to be passed to Weaviate pod as
-    # an environment variable
-    apiKey: ''
-
-  # The ref2vec-centroid module
-  ref2vec-centroid:
-
-    # enable if you want to use Centroid module
-    enabled: false
 
   # The multi2vec-clip modules uses CLIP transformers to vectorize both images
   # and text in the same vector space. It is typically slow(er) on CPUs and should
@@ -466,13 +420,11 @@ modules:
       requests:
         cpu: '1000m'
         memory: '3000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
       limits:
         cpu: '1000m'
         memory: '5000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
 
@@ -503,20 +455,18 @@ modules:
       requests:
         cpu: '1000m'
         memory: '3000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
       limits:
         cpu: '1000m'
         memory: '5000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
 
   # The img2vec-neural module uses neural networks, to generate
   # a vector representation of the image
   img2vec-neural:
-    enabled: false
+    enabled: true
     # You can set directly an inference URL of this module without deploying it with this release.
     # You can do so by setting a value for the `inferenceUrl` here AND by setting the `enable` to `false`
     inferenceUrl: {}
@@ -528,7 +478,7 @@ modules:
     envconfig:
       # enable for CUDA support. Your K8s cluster needs to be configured
       # accordingly and you need to explicitly set GPU requests & limits below
-      enable_cuda: false
+      enable_cuda: true
 
       # only used when cuda is enabled
       nvidia_visible_devices: all
@@ -539,16 +489,16 @@ modules:
     resources:
       requests:
         cpu: '1000m'
-        memory: '3000Mi'
-
+        memory: '5000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
       limits:
         cpu: '1000m'
-        memory: '5000Mi'
-
+        memory: '8000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
 
   # The text-spellcheck module uses spellchecker library to check
   # misspellings in a given text
@@ -575,26 +525,24 @@ modules:
 
     resources:
       requests:
-        cpu: '400m'
-        memory: '400Mi'
-
+        cpu: '1000m'
+        memory: '3000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
       limits:
-        cpu: '500m'
-        memory: '500Mi'
-
+        cpu: '1000m'
+        memory: '5000Mi'
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
 
   # The ner-transformers module uses spellchecker library to check
   # misspellings in a given text
   ner-transformers:
-    enabled: false
+    enabled: true
     # You can set directly an inference URL of this module without deploying it with this release.
     # You can do so by setting a value for the `inferenceUrl` here AND by setting the `enable` to `false`
     inferenceUrl: {}
-    tag: dbmdz-bert-large-cased-finetuned-conll03-english-0.0.2
+    tag: dslim-bert-base-NER
     repo: semitechnologies/ner-transformers
     registry: docker.io
     replicas: 1
@@ -602,7 +550,7 @@ modules:
     envconfig:
       # enable for CUDA support. Your K8s cluster needs to be configured
       # accordingly and you need to explicitly set GPU requests & limits below
-      enable_cuda: false
+      enable_cuda: true
 
       # only used when cuda is enabled
       nvidia_visible_devices: all
@@ -614,15 +562,15 @@ modules:
       requests:
         cpu: '1000m'
         memory: '3000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
       limits:
         cpu: '1000m'
         memory: '5000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
+        k8s.amazonaws.com/vgpu: 1
 
   # The sum-transformers module makes result texts summarizations
   sum-transformers:
@@ -650,13 +598,11 @@ modules:
       requests:
         cpu: '1000m'
         memory: '3000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
       limits:
         cpu: '1000m'
         memory: '5000Mi'
-
         # enable if running with CUDA support
         # nvidia.com/gpu: 1
 
@@ -664,7 +610,7 @@ modules:
   # use this module as the vectorizer if nothing else is specified. Can be
   # overwritten on a per-class basis.
   # set to text2vec-transformers if running with transformers instead
-  default_vectorizer_module: none
+  default_vectorizer_module: text2vec-transformers
 
 # It is also possible to configure authentication and authorization through a
 # custom configmap The authorization and authentication values defined in
@@ -692,8 +638,14 @@ collector_proxy:
 # Pass any annotations to Weaviate pods
 annotations: {}
 
-nodeSelector: {}
+nodeSelector:
+  k8s.amazonaws.com/accelerator: vgpu
+  # nvidia.com/gpu: present
 
 tolerations: []
+  # - key: "nvidia.com/gpu"
+  #   operator: "Equal"
+  #   value: "present"
+  #   effect: "NoSchedule"
 
 affinity: {}
